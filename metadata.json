@@ -1,0 +1,6 @@
+{
+  "name": "Max View",
+  "description": "A dark mode clone of the Groww app featuring interactive financial charting, paper trading, portfolio management, and a clean modern UI with brand green accents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

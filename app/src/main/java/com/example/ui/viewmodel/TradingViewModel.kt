@@ -40,6 +40,35 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     private val _showUTBot = MutableStateFlow(false)
     val showUTBot: StateFlow<Boolean> = _showUTBot.asStateFlow()
 
+    // Configurable Indicator parameters
+    private val _smaPeriod = MutableStateFlow(20)
+    val smaPeriod: StateFlow<Int> = _smaPeriod.asStateFlow()
+
+    private val _emaPeriod = MutableStateFlow(50)
+    val emaPeriod: StateFlow<Int> = _emaPeriod.asStateFlow()
+
+    private val _rsiPeriod = MutableStateFlow(14)
+    val rsiPeriod: StateFlow<Int> = _rsiPeriod.asStateFlow()
+
+    private val _utBotSensitivity = MutableStateFlow(2.0f)
+    val utBotSensitivity: StateFlow<Float> = _utBotSensitivity.asStateFlow()
+
+    fun updateSmaPeriod(period: Int) {
+        _smaPeriod.value = period
+    }
+
+    fun updateEmaPeriod(period: Int) {
+        _emaPeriod.value = period
+    }
+
+    fun updateRsiPeriod(period: Int) {
+        _rsiPeriod.value = period
+    }
+
+    fun updateUtBotSensitivity(sensitivity: Float) {
+        _utBotSensitivity.value = sensitivity
+    }
+
     // Active Drawing Tool: "None", "Horizontal", "TrendLine"
     private val _activeDrawingTool = MutableStateFlow("None")
     val activeDrawingTool: StateFlow<String> = _activeDrawingTool.asStateFlow()
@@ -66,6 +95,8 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     // Portfolio flows
     val portfolioState: StateFlow<PortfolioState?> = repository.getPortfolioState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val livePrices: StateFlow<Map<String, Double>> = repository.livePricesFlow
 
     // Positions merged with live prices for dynamic valuations
     val positions: StateFlow<List<PositionWithValuation>> = combine(
@@ -167,6 +198,9 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
 
                     val timeframe = _selectedTimeframe.value
                     val intervalMs = when (timeframe) {
+                        "5S" -> 5_000L
+                        "15S" -> 15_000L
+                        "30S" -> 30_000L
                         "1M" -> 60_000L
                         "5M" -> 300_000L
                         "15M" -> 900_000L
@@ -210,8 +244,142 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun loadBaseCandles(symbol: String, timeframe: String) {
-        val series = repository.generateHistoricalCandles(symbol, timeframe, count = 80)
-        _candles.value = series
+        if (timeframe == "5S") {
+            // Get 10 candles of 1M, and split each into twelve 5-second candles to make 120 total
+            val base1M = repository.generateHistoricalCandles(symbol, "1M", count = 10)
+            val splitCandles = mutableListOf<com.example.data.model.CandlePoint>()
+            base1M.forEach { candle ->
+                val steps = 12
+                val prices = DoubleArray(steps + 1)
+                prices[0] = candle.open
+                prices[steps] = candle.close
+                for (i in 1 until steps) {
+                    val t = i.toDouble() / steps.toDouble()
+                    val trend = candle.open + (candle.close - candle.open) * t
+                    val range = candle.high - candle.low
+                    val noise = (Math.random() - 0.5) * (range * 0.15)
+                    prices[i] = (trend + noise).coerceIn(candle.low, candle.high)
+                }
+                for (i in 0 until steps) {
+                    val openVal = prices[i]
+                    val closeVal = prices[i + 1]
+                    val highVal = maxOf(openVal, closeVal) + (candle.high - maxOf(openVal, closeVal)) * (0.2 + 0.4 * Math.random())
+                    val lowVal = minOf(openVal, closeVal) - (minOf(openVal, closeVal) - candle.low) * (0.2 + 0.4 * Math.random())
+                    splitCandles.add(com.example.data.model.CandlePoint(
+                        timestamp = candle.timestamp + (i * 5_000L),
+                        open = openVal,
+                        high = highVal.coerceIn(candle.low, candle.high),
+                        low = lowVal.coerceIn(candle.low, candle.high),
+                        close = closeVal,
+                        volume = candle.volume / 12.0
+                    ))
+                }
+            }
+            _candles.value = splitCandles
+        } else if (timeframe == "15S") {
+            // Get 20 candles of 1M, and split each into four 15-second candles to make 80 total
+            val base1M = repository.generateHistoricalCandles(symbol, "1M", count = 20)
+            val splitCandles = mutableListOf<com.example.data.model.CandlePoint>()
+            base1M.forEach { candle ->
+                val p0 = candle.open
+                val p4 = candle.close
+                val p1 = p0 + (p4 - p0) * 0.25
+                val p2 = p0 + (p4 - p0) * 0.50
+                val p3 = p0 + (p4 - p0) * 0.75
+                
+                // First 15s Candle
+                val high1 = maxOf(p0, p1) + (candle.high - maxOf(p0, p1)) * 0.3
+                val low1 = minOf(p0, p1) - (minOf(p0, p1) - candle.low) * 0.3
+                splitCandles.add(com.example.data.model.CandlePoint(
+                    timestamp = candle.timestamp,
+                    open = p0,
+                    high = high1,
+                    low = low1,
+                    close = p1,
+                    volume = candle.volume / 4.0
+                ))
+                
+                // Second 15s Candle
+                val high2 = maxOf(p1, p2) + (candle.high - maxOf(p1, p2)) * 0.4
+                val low2 = minOf(p1, p2) - (minOf(p1, p2) - candle.low) * 0.4
+                splitCandles.add(com.example.data.model.CandlePoint(
+                    timestamp = candle.timestamp + 15_000L,
+                    open = p1,
+                    high = high2,
+                    low = low2,
+                    close = p2,
+                    volume = candle.volume / 4.0
+                ))
+                
+                // Third 15s Candle
+                val high3 = maxOf(p2, p3) + (candle.high - maxOf(p2, p3)) * 0.5
+                val low3 = minOf(p2, p3) - (minOf(p2, p3) - candle.low) * 0.5
+                splitCandles.add(com.example.data.model.CandlePoint(
+                    timestamp = candle.timestamp + 30_000L,
+                    open = p2,
+                    high = high3,
+                    low = low3,
+                    close = p3,
+                    volume = candle.volume / 4.0
+                ))
+                
+                // Fourth 15s Candle
+                val high4 = maxOf(p3, p4) + (candle.high - maxOf(p3, p4)) * 0.6
+                val low4 = minOf(p3, p4) - (minOf(p3, p4) - candle.low) * 0.6
+                splitCandles.add(com.example.data.model.CandlePoint(
+                    timestamp = candle.timestamp + 45_000L,
+                    open = p3,
+                    high = high4,
+                    low = low4,
+                    close = p4,
+                    volume = candle.volume / 4.0
+                ))
+            }
+            _candles.value = splitCandles
+        } else if (timeframe == "30S") {
+            // Get 40 candles of 1M, and split each into two 30-second candles to make 80 total
+            val base1M = repository.generateHistoricalCandles(symbol, "1M", count = 40)
+            val splitCandles = mutableListOf<com.example.data.model.CandlePoint>()
+            base1M.forEach { candle ->
+                val midPrice = (candle.open + candle.close) / 2.0
+                
+                // First 30s Candle
+                val open1 = candle.open
+                val close1 = midPrice
+                val high1 = maxOf(open1, close1) + (candle.high - maxOf(open1, close1)) * 0.4
+                val low1 = minOf(open1, close1) - (minOf(open1, close1) - candle.low) * 0.4
+                val volume1 = candle.volume / 2.0
+                
+                splitCandles.add(com.example.data.model.CandlePoint(
+                    timestamp = candle.timestamp,
+                    open = open1,
+                    high = high1,
+                    low = low1,
+                    close = close1,
+                    volume = volume1
+                ))
+                
+                // Second 30s Candle
+                val open2 = close1
+                val close2 = candle.close
+                val high2 = maxOf(open2, close2) + (candle.high - maxOf(open2, close2)) * 0.6
+                val low2 = minOf(open2, close2) - (minOf(open2, close2) - candle.low) * 0.6
+                val volume2 = candle.volume / 2.0
+                
+                splitCandles.add(com.example.data.model.CandlePoint(
+                    timestamp = candle.timestamp + 30_000L,
+                    open = open2,
+                    high = high2,
+                    low = low2,
+                    close = close2,
+                    volume = volume2
+                ))
+            }
+            _candles.value = splitCandles
+        } else {
+            val series = repository.generateHistoricalCandles(symbol, timeframe, count = 80)
+            _candles.value = series
+        }
     }
 
     private fun startTickSimulation() {
@@ -223,14 +391,18 @@ class TradingViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
-                delay(5000) // Poll every 5 seconds for real-time prices
+                // Always simulate local ticks to keep the chart dynamically moving 24/7
+                repository.simulatePriceTicks()
+                delay(3000) // Poll and simulate every 3 seconds for a smoother live UI
             }
         }
     }
 
     fun selectSymbol(symbol: String) {
-        _selectedSymbol.value = symbol
-        loadBaseCandles(symbol, _selectedTimeframe.value)
+        val upper = symbol.uppercase()
+        repository.ensureLivePrice(upper)
+        _selectedSymbol.value = upper
+        loadBaseCandles(upper, _selectedTimeframe.value)
         _crosshairPoint.value = null
     }
 

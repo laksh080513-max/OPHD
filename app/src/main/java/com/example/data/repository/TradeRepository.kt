@@ -181,6 +181,37 @@ class TradeRepository(private val dao: TradingDao) {
         }
     }
 
+    fun ensureLivePrice(symbol: String): Double {
+        val current = _livePrices.value
+        val upper = symbol.uppercase()
+        val existing = current[upper]
+        if (existing != null) return existing
+        
+        val defaultItem = defaultWatchlist.find { it.symbol == upper }
+        val price = defaultItem?.initialPrice ?: when {
+            upper.startsWith("NSE:") -> 1200.0
+            upper.startsWith("MCX:") -> {
+                if (upper.contains("GOLD")) 72000.0
+                else if (upper.contains("SILVER")) 91000.0
+                else if (upper.contains("CRUDE")) 6600.0
+                else 500.0
+            }
+            upper.contains("USD") && upper.length == 6 -> 1.0850
+            upper.endsWith("USD") || upper.contains("BTC") || upper.contains("ETH") || upper.contains("SOL") -> {
+                if (upper.contains("BTC")) 65000.0
+                else if (upper.contains("ETH")) 3400.0
+                else if (upper.contains("SOL")) 140.0
+                else 100.0
+            }
+            else -> 150.0
+        }
+        
+        val newMap = current.toMutableMap()
+        newMap[upper] = price
+        _livePrices.value = newMap
+        return price
+    }
+
     // Flow Accessors
     fun getWatchlist(): Flow<List<WatchlistItem>> = dao.getWatchlistFlow()
     fun getPortfolioState(): Flow<PortfolioState?> = dao.getPortfolioStateFlow()
@@ -236,12 +267,12 @@ class TradeRepository(private val dao: TradingDao) {
     // Trade operations
     suspend fun buyAsset(symbol: String, shares: Double): String {
         if (shares <= 0) return "Invalid share quantity"
-        val price = _livePrices.value[symbol] ?: return "Symbol price not available"
+        val price = ensureLivePrice(symbol)
         val totalCost = price * shares
 
         val portfolio = dao.getPortfolioStateSync() ?: return "Portfolio balance missing"
         if (portfolio.cash < totalCost) {
-            return "Insufficient funds. Required: $${String.format("%,.2f", totalCost)}, Available: $${String.format("%,.2f", portfolio.cash)}"
+            return "Insufficient funds. Required: ${totalCost.formatPrice(symbol)}, Available: ${portfolio.cash.formatPrice(symbol)}"
         }
 
         // Deduct Cash
@@ -261,12 +292,12 @@ class TradeRepository(private val dao: TradingDao) {
         // Add transaction log
         dao.insertOrder(DatabaseOrder(symbol = symbol, type = "BUY", price = price, shares = shares))
 
-        return "Successfully purchased $shares shares of $symbol at $${String.format("%,.4f" , price)}"
+        return "Successfully purchased $shares shares of $symbol at ${price.formatPrice(symbol)}"
     }
 
     suspend fun sellAsset(symbol: String, shares: Double): String {
         if (shares <= 0) return "Invalid share quantity"
-        val price = _livePrices.value[symbol] ?: return "Symbol price not available"
+        val price = ensureLivePrice(symbol)
         val totalProceeds = price * shares
 
         val existingPosition = dao.getPositionSync(symbol) ?: return "You don't own any shares of $symbol"
@@ -290,7 +321,7 @@ class TradeRepository(private val dao: TradingDao) {
         // Add transaction log
         dao.insertOrder(DatabaseOrder(symbol = symbol, type = "SELL", price = price, shares = shares))
 
-        return "Successfully sold $shares shares of $symbol at $${String.format("%,.4f" , price)}"
+        return "Successfully sold $shares shares of $symbol at ${price.formatPrice(symbol)}"
     }
 
     // Historical Candlestick Generation

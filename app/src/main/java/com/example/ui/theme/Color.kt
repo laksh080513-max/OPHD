@@ -4,6 +4,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 
 val isDarkThemeEnabled = mutableStateOf(true)
+val isProUserEnabled = mutableStateOf(false)
 
 val BgMidnight: Color get() = if (isDarkThemeEnabled.value) Color(0xFF121212) else Color(0xFFF0F2F5)
 val SurfaceDark: Color get() = if (isDarkThemeEnabled.value) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)

@@ -17,6 +17,7 @@ fun TradingViewWidget(
     showEMA: Boolean = false,
     showRSI: Boolean = false,
     showUTBot: Boolean = false,
+    averageEntryPrice: Double? = null,
     modifier: Modifier = Modifier
 ) {
     val isDark = com.example.ui.theme.isDarkThemeEnabled.value
@@ -25,6 +26,8 @@ fun TradingViewWidget(
     
     // Map common timeframes to TradingView intervals
     val tvInterval = when (interval) {
+        "5S" -> "5S"
+        "15S" -> "15S"
         "30S" -> "30S"
         "1M" -> "1"
         "5M" -> "5"
@@ -43,6 +46,12 @@ fun TradingViewWidget(
         if (showRSI) add("\"RSI@tv-basicstudies\"")
         if (showUTBot) add("\"SuperTrend@tv-basicstudies\"")
     }.joinToString(",")
+    
+    val marksJson = if (averageEntryPrice != null) {
+        """[{"id": "buy_mark", "time": Math.floor(Date.now() / 1000) - 86400 * 3, "color": "green", "text": "Bought: ${String.format("%.2f", averageEntryPrice)}", "label": "B", "labelFontColor": "white", "minSize": 20}]"""
+    } else {
+        "[]"
+    }
     
     val htmlContent = """
         <!DOCTYPE html>
@@ -85,6 +94,7 @@ fun TradingViewWidget(
           "save_image": false,
           "session": "extended",
           "show_countdown": true,
+          "marks": $marksJson,
           "range": "${if (interval in listOf("1M", "5M", "15M", "1H", "4H")) "5D" else "12M"}",
           "studies": [$studiesList],
           "show_popup_button": false,

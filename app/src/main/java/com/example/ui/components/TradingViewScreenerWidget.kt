@@ -11,6 +11,7 @@ import com.example.ui.theme.isDarkThemeEnabled
 @Composable
 fun TradingViewScreenerWidget(
     market: String = "india",
+    defaultScreen: String = "general",
     onSymbolClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -49,7 +50,7 @@ fun TradingViewScreenerWidget(
             "width": "100%",
             "height": "100%",
             "defaultColumn": "overview",
-            "defaultScreen": "general",
+            "defaultScreen": "$defaultScreen",
             "market": "${actualMarket}",
             ${if (exchangeFilter.isNotEmpty()) "\"exchange\": \"$exchangeFilter\"," else ""}
             "showToolbar": true,

@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CandlePoint
 import com.example.data.model.DatabaseOrder
+import com.example.data.model.formatPrice
+import com.example.data.model.getCurrencySymbol
+import com.example.data.model.getMarketStatus
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.example.ui.theme.*
@@ -246,6 +249,13 @@ fun WatchlistSection(
                                     color = TextMuted,
                                     fontWeight = FontWeight.Bold
                                 )
+                                
+                                val status = getMarketStatus(wrapper.item.symbol)
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(if (status.isOpen) BullGreen else AccentOrange, CircleShape)
+                                )
                             }
                             Text(
                                 text = wrapper.item.name,
@@ -271,7 +281,7 @@ fun WatchlistSection(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = String.format("%,.4f" , wrapper.price),
+                                    text = wrapper.price.formatPrice(wrapper.item.symbol),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
                                     color = tickColor,
@@ -335,11 +345,34 @@ fun OrderPlacementSection(
             ) {
                 Column {
                     Text("ACCOUNT CASH", fontSize = 10.sp, color = TextMuted, fontWeight = FontWeight.SemiBold)
-                    Text("$${String.format("%,.2f", cash)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BullGreen)
+                    Text(cash.formatPrice(selectedSymbol), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BullGreen)
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("LIVE PRICE", fontSize = 10.sp, color = TextMuted, fontWeight = FontWeight.SemiBold)
-                    Text("$${String.format("%,.4f", currentPrice)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AccentOrange)
+                    Text(currentPrice.formatPrice(selectedSymbol), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AccentOrange)
+                }
+            }
+
+            // Market Status Indicator
+            val marketStatus = remember(selectedSymbol) { getMarketStatus(selectedSymbol) }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Max View Mode:", fontSize = 11.sp, color = TextMuted)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(if (marketStatus.isOpen) BullGreen else AccentOrange, CircleShape)
+                    )
+                    Text(
+                        text = if (marketStatus.isOpen) "Market OPEN (Live)" else "After-Hours (24/7 Fill)",
+                        color = if (marketStatus.isOpen) BullGreen else AccentOrange,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
@@ -364,7 +397,7 @@ fun OrderPlacementSection(
             ) {
                 Text("Total Estimated Value:", fontSize = 12.sp, color = TextMuted)
                 Text(
-                    text = "$${String.format("%,.2f" , costEstimate)}",
+                    text = costEstimate.formatPrice(selectedSymbol),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = TextWhite
@@ -574,9 +607,11 @@ fun MyPortfolioSection(
     positions: List<PositionWithValuation>,
     orderHistory: List<DatabaseOrder>,
     onSellFull: (symbol: String, shares: Double) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    selectedSymbol: String = "BTCUSD"
 ) {
     var activeTab by remember { mutableStateOf("POSITIONS") } // "POSITIONS" or "HISTORY"
+    val curSym = getCurrencySymbol(selectedSymbol)
 
     Card(
         modifier = modifier.testTag("portfolio_section"),
@@ -604,7 +639,7 @@ fun MyPortfolioSection(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "$${String.format("%,.2f (%,.2f%%)", summary.overallPL, summary.overallPLPercent)}",
+                        text = "$curSym${String.format("%,.2f (%,.2f%%)", summary.overallPL, summary.overallPLPercent)}",
                         color = if (summary.overallPL >= 0) BullGreen else BearRed,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -619,9 +654,9 @@ fun MyPortfolioSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                PortfolioStatBox("TOTAL EQUITY", "$${String.format("%,.2f", summary.totalEquity)}", Modifier.weight(1f))
-                PortfolioStatBox("HOLDINGS VALUE", "$${String.format("%,.2f", summary.holdingsValue)}", Modifier.weight(1f))
-                PortfolioStatBox("CASH", "$${String.format("%,.2f", summary.cash)}", Modifier.weight(1f))
+                PortfolioStatBox("TOTAL EQUITY", "$curSym${String.format("%,.2f", summary.totalEquity)}", Modifier.weight(1f))
+                PortfolioStatBox("HOLDINGS VALUE", "$curSym${String.format("%,.2f", summary.holdingsValue)}", Modifier.weight(1f))
+                PortfolioStatBox("CASH", "$curSym${String.format("%,.2f", summary.cash)}", Modifier.weight(1f))
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -641,7 +676,7 @@ fun MyPortfolioSection(
                 Tab(
                     selected = activeTab == "HISTORY",
                     onClick = { activeTab = "HISTORY" },
-                    text = { Text("Trades History (${orderHistory.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    text = { Text("Max View History (${orderHistory.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                 )
             }
 
@@ -658,7 +693,7 @@ fun MyPortfolioSection(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Icon(Icons.Filled.Lock, contentDescription = "No position", tint = TextMuted.copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
-                            Text("No open positions. Buy assets to start paper trading!", color = TextMuted, fontSize = 11.sp)
+                            Text("No open positions. Buy assets to start Max View!", color = TextMuted, fontSize = 11.sp)
                         }
                     }
                 } else {
@@ -687,8 +722,8 @@ fun MyPortfolioSection(
                                     modifier = Modifier.weight(1.5f),
                                     horizontalAlignment = Alignment.End
                                 ) {
-                                    Text("$${String.format("%,.2f", h.sharesValuation)}", fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 13.sp)
-                                    Text("Avg cost: $${String.format("%,.4f", h.position.averageEntryPrice)}", fontSize = 9.sp, color = TextMuted)
+                                    Text(h.sharesValuation.formatPrice(h.position.symbol), fontWeight = FontWeight.Bold, color = TextWhite, fontSize = 13.sp)
+                                    Text("Avg cost: ${h.position.averageEntryPrice.formatPrice(h.position.symbol)}", fontSize = 9.sp, color = TextMuted)
                                 }
 
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -699,7 +734,7 @@ fun MyPortfolioSection(
                                 ) {
                                     val plCol = if (h.unrealizedPL >= 0) BullGreen else BearRed
                                     Text(
-                                        text = "$${String.format("%,.2f", h.unrealizedPL)}",
+                                        text = h.unrealizedPL.formatPrice(h.position.symbol),
                                         fontWeight = FontWeight.Bold,
                                         color = plCol,
                                         fontSize = 12.sp
@@ -779,7 +814,7 @@ fun MyPortfolioSection(
                             .height(130.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No recorded trade executions.", color = TextMuted, fontSize = 11.sp)
+                        Text("No recorded executions.", color = TextMuted, fontSize = 11.sp)
                     }
                 } else {
                     LazyColumn(
@@ -824,13 +859,13 @@ fun MyPortfolioSection(
 
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "$${String.format("%,.2f", order.price * order.shares)}",
+                                        text = (order.price * order.shares).formatPrice(order.symbol),
                                         fontWeight = FontWeight.Bold,
                                         color = TextWhite,
                                         fontSize = 12.sp
                                     )
                                     Text(
-                                        text = "${String.format("%.4f", order.shares)} units @ $${String.format("%,.4f", order.price)}",
+                                        text = "${String.format("%.4f", order.shares)} units @ ${order.price.formatPrice(order.symbol)}",
                                         fontSize = 9.sp,
                                         color = TextMuted
                                     )
